@@ -1,5 +1,4 @@
-"""
-bot.py — Application entry point.
+"""bot.py — Application entry point.
 Initialises DB, seeds barbers, registers routers, starts scheduler, and polls.
 """
 import asyncio
@@ -19,11 +18,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  [%(levelname)s]  %(name)s – %(message)s",
 )
+
 logger = logging.getLogger(__name__)
 
 
 async def on_startup(bot: Bot) -> None:
-    """Tasks to run when the bot starts."""
     await init_db()
     await seed_barbers(BARBERS)
     logger.info("Database initialised and barbers seeded.")
@@ -33,7 +32,6 @@ async def on_startup(bot: Bot) -> None:
 
 
 async def on_shutdown(scheduler) -> None:
-    """Graceful shutdown."""
     if scheduler.running:
         scheduler.shutdown(wait=False)
     logger.info("Bot stopped.")
@@ -41,28 +39,24 @@ async def on_shutdown(scheduler) -> None:
 
 async def main() -> None:
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not set! Copy .env.example → .env and fill it in.")
+        raise ValueError("BOT_TOKEN is not set!")
 
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    # FSM storage (use Redis for production: RedisStorage)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # ── Register routers ──────────────────────────────────────────────────────
-    dp.include_router(admin_handlers.router)   # Admin first (higher priority)
+    # Routers
+    dp.include_router(admin_handlers.router)
     dp.include_router(user_handlers.router)
 
-    # ── Lifecycle hooks ───────────────────────────────────────────────────────
-    async def _on_startup():
-        await on_startup(bot)
-    
-    dp.startup.register(_on_startup)
+    # Startup hook
+    dp.startup.register(lambda: on_startup(bot))
 
-    # ── Background scheduler (reminders) ──────────────────────────────────────
+    # Scheduler
     scheduler = setup_scheduler(bot)
     scheduler.start()
     logger.info("Reminder scheduler started.")
@@ -74,5 +68,5 @@ async def main() -> None:
         await bot.session.close()
 
 
-if __name__ == "__main__":
+if name == "__main__":
     asyncio.run(main())
