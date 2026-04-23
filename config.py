@@ -40,3 +40,11 @@ CALENDAR_DAYS_AHEAD: int = 14   # Show next 14 days
 
 # ── Reminder ─────────────────────────────────────────────────────────────────
 REMINDER_HOURS_BEFORE: int = 2
+
+# ── Webhook settings (for Render.com) ────────────────────────────────────────
+WEBHOOK_HOST: str = os.getenv("RENDER_EXTERNAL_URL", "")  # e.g., https://your-app.onrender.com
+WEBHOOK_PATH: str = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL: str = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+WEB_SERVER_HOST: str = "0.0.0.0"
+WEB_SERVER_PORT: int = int(os.getenv("PORT", 8080))
