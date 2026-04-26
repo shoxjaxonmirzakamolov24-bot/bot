@@ -10,7 +10,7 @@ from aiohttp import web
 
 from config import (
     BOT_TOKEN, BARBERS, WEBHOOK_URL, WEBHOOK_PATH, 
-    WEB_SERVER_HOST, WEB_SERVER_PORT
+    WEB_SERVER_HOST, WEB_SERVER_PORT, WEBHOOK_HOST
 )
 from database.db import init_db, seed_barbers
 from handlers import user_handlers, admin_handlers
@@ -29,18 +29,23 @@ async def on_startup(bot: Bot) -> None:
     await seed_barbers(BARBERS)
     logger.info("Database initialised and barbers seeded.")
 
-    # Set webhook
-    await bot.set_webhook(WEBHOOK_URL)
+    # ── Background scheduler (reminders) ──────────────────────────────────────
+    scheduler = setup_scheduler(bot)
+    scheduler.start()
+    logger.info("Reminder scheduler started.")
+
+    if WEBHOOK_HOST:
+        await bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"Webhook set to: {WEBHOOK_URL}")
+    
     info = await bot.get_me()
     logger.info(f"Bot started: @{info.username}")
-    logger.info(f"Webhook set to: {WEBHOOK_URL}")
 
 
-async def on_shutdown(scheduler) -> None:
+async def on_shutdown(bot: Bot) -> None:
     """Graceful shutdown."""
-    if scheduler.running:
-        scheduler.shutdown(wait=False)
-    logger.info("Bot stopped.")
+    logger.info("Bot stopping...")
+    # Add any cleanup here if needed
 
 
 def main() -> None:
@@ -60,29 +65,38 @@ def main() -> None:
     dp.include_router(admin_handlers.router)
     dp.include_router(user_handlers.router)
 
-    # ── Background scheduler ──────────────────────────────────────────────────
-    scheduler = setup_scheduler(bot)
-    scheduler.start()
-    logger.info("Reminder scheduler started.")
-
     # ── Lifecycle hooks ───────────────────────────────────────────────────────
     dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
-    # ── Webhook Setup ────────────────────────────────────────────────────────
-    app = web.Application()
+    if WEBHOOK_HOST:
+        # ── Webhook Setup ────────────────────────────────────────────────────
+        logger.info("Starting in WEBHOOK mode...")
+        app = web.Application()
 
-    webhook_requests_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    )
-    # Register webhook handler on application
-    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+        async def index_handler(request):
+            return web.Response(text="Bot is running!")
 
-    # Mount dispatcher startup and shutdown hooks to aiohttp app
-    setup_application(app, dp, bot=bot)
+        webhook_requests_handler = SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+        )
+        webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+        app.router.add_get("/", index_handler)
+        setup_application(app, dp, bot=bot)
 
-    # Run web server
-    web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
+        web.run_app(app, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
+    else:
+        # ── Polling Setup ────────────────────────────────────────────────────
+        logger.info("Starting in POLLING mode (local development)...")
+        
+        async def run_polling():
+            try:
+                await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+            finally:
+                await bot.session.close()
+
+        asyncio.run(run_polling())
 
 
 if __name__ == "__main__":
